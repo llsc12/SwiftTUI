@@ -1,151 +1,168 @@
 import Foundation
 
 public struct TextField: View, PrimitiveView {
-	public let placeholder: String?
-	public let initialValue: String?
-	public let action: (String) -> Void
-	public let update: ((String) -> Void)?
 
-	@Environment(\.placeholderColor) private var placeholderColor: Color
+  public let placeholder: String?
+  public let initialValue: String?
+  public let action: (String) -> Void
+  public let update: ((String) -> Void)?
+  
+  // scoped modifiers
+  private var disableAction: Bool = false
+  
+  public func disableAction(_ disable: Bool = true) -> TextField {
+	var copy = self
+	copy.disableAction = disable
+	return copy
+  }
+  
+  // end
 
-	public init(
-		placeholder: String? = nil,
-		initialValue: String? = nil,
-		action: @escaping (String) -> Void,
-		update: ((String) -> Void)? = nil
-	) {
-		self.placeholder = placeholder
-		self.initialValue = initialValue
-		self.action = action
-		self.update = update
-	}
+  @Environment(\.placeholderColor) private var placeholderColor: Color
 
-	static var size: Int? { 1 }
+  public init(
+    placeholder: String? = nil,
+    initialValue: String? = nil,
+    action: @escaping (String) -> Void,
+    update: ((String) -> Void)? = nil
+  ) {
+    self.placeholder = placeholder
+    self.initialValue = initialValue
+    self.action = action
+    self.update = update
+  }
 
-	func buildNode(_ node: Node) {
-		setupEnvironmentProperties(node: node)
-		node.control = TextFieldControl(
-			placeholder: placeholder ?? "",
-			placeholderColor: placeholderColor,
-			initialValue: initialValue ?? "",
-			action: action,
-			update: update
-		)
-	}
+  static var size: Int? { 1 }
 
-	func updateNode(_ node: Node) {
-		setupEnvironmentProperties(node: node)
-		node.view = self
-		(node.control as! TextFieldControl).action = action
-	}
+  func buildNode(_ node: Node) {
+    setupEnvironmentProperties(node: node)
+    node.control = TextFieldControl(
+      placeholder: placeholder ?? "",
+      placeholderColor: placeholderColor,
+      initialValue: initialValue ?? "",
+      action: action,
+      update: update,
+	  disableAction: disableAction
+    )
+  }
 
-	private class TextFieldControl: Control {
-		var placeholder: String
-		var placeholderColor: Color
-		var action: (String) -> Void
-		var update: ((String) -> Void)?
-		var text: String = ""
+  func updateNode(_ node: Node) {
+    setupEnvironmentProperties(node: node)
+    node.view = self
+    (node.control as! TextFieldControl).action = action
+  }
 
-		init(
-			placeholder: String,
-			placeholderColor: Color,
-			initialValue: String,
-			action: @escaping (String) -> Void,
-			update: ((String) -> Void)?
-		) {
-			self.placeholder = placeholder
-			self.placeholderColor = placeholderColor
-			self.text = initialValue
-			self.action = action
-			self.update = update
-		}
+  private class TextFieldControl: Control {
+    var placeholder: String
+    var placeholderColor: Color
+    var action: (String) -> Void
+    var update: ((String) -> Void)?
+    var text: String = ""
+	var disableAction: Bool = false
 
-		override func size(proposedSize: Size) -> Size {
-			return Size(
-				width: Extended(max(text.count, placeholder.count)) + 1,
-				height: 1
-			)
-		}
+    init(
+      placeholder: String,
+      placeholderColor: Color,
+      initialValue: String,
+      action: @escaping (String) -> Void,
+      update: ((String) -> Void)?,
+	  disableAction: Bool = false
+    ) {
+      self.placeholder = placeholder
+      self.placeholderColor = placeholderColor
+      self.text = initialValue
+      self.action = action
+      self.update = update
+	  self.disableAction = disableAction
+    }
 
-		override func handleEvent(_ char: Character) {
-//			defer { update?(text) } // we don't want update after action
+    override func size(proposedSize: Size) -> Size {
+      return Size(
+        width: Extended(max(text.count, placeholder.count)) + 1,
+        height: 1
+      )
+    }
 
-			if char == "\n" {
-				update?(text)
-				action(text)
-				self.text = ""
-				layer.invalidate()
-				return
-			}
+    override func handleEvent(_ char: Character) {
+      //			defer { update?(text) } // we don't want update after action
 
-			if char == ASCII.DEL {
-				if !self.text.isEmpty {
-					self.text.removeLast()
-					update?(text)
-					layer.invalidate()
-				}
-				return
-			}
+      if char == "\n" {
+		guard !disableAction else { return }
+        update?(text)
+        action(text)
+        self.text = ""
+        layer.invalidate()
+        return
+      }
 
-			self.text += String(char)
-			layer.invalidate()
-			update?(text)
-		}
+      if char == ASCII.DEL {
+        if !self.text.isEmpty {
+          self.text.removeLast()
+          update?(text)
+          layer.invalidate()
+        }
+        return
+      }
 
-		override func cell(at position: Position) -> Cell? {
-			guard position.line == 0 else { return nil }
-			if text.isEmpty {
-				if position.column.intValue < placeholder.count {
-					let showUnderline =
-						(position.column.intValue == 0) && isFirstResponder
-					let char = placeholder[
-						placeholder.index(
-							placeholder.startIndex,
-							offsetBy: position.column.intValue
-						)
-					]
-					return Cell(
-						char: char,
-						foregroundColor: placeholderColor,
-						attributes: CellAttributes(underline: showUnderline)
-					)
-				}
-				return .init(char: " ")
-			}
-			if position.column.intValue == text.count, isFirstResponder {
-				return Cell(char: " ", attributes: CellAttributes(underline: true))
-			}
-			guard position.column.intValue < text.count else {
-				return .init(char: " ")
-			}
-			return Cell(
-				char: text[
-					text.index(text.startIndex, offsetBy: position.column.intValue)
-				]
-			)
-		}
+      self.text += String(char)
+      layer.invalidate()
+      update?(text)
+    }
 
-		override var selectable: Bool { true }
+    override func cell(at position: Position) -> Cell? {
+      guard position.line == 0 else { return nil }
+      if text.isEmpty {
+        if position.column.intValue < placeholder.count {
+          let showUnderline =
+            (position.column.intValue == 0) && isFirstResponder
+          let char = placeholder[
+            placeholder.index(
+              placeholder.startIndex,
+              offsetBy: position.column.intValue
+            )
+          ]
+          return Cell(
+            char: char,
+            foregroundColor: placeholderColor,
+            attributes: CellAttributes(underline: showUnderline)
+          )
+        }
+        return .init(char: " ")
+      }
+      if position.column.intValue == text.count, isFirstResponder {
+        return Cell(char: " ", attributes: CellAttributes(underline: true))
+      }
+      guard position.column.intValue < text.count else {
+        return .init(char: " ")
+      }
+      return Cell(
+        char: text[
+          text.index(text.startIndex, offsetBy: position.column.intValue)
+        ]
+      )
+    }
 
-		override func becomeFirstResponder() {
-			super.becomeFirstResponder()
-			layer.invalidate()
-		}
+    override var selectable: Bool { true }
 
-		override func resignFirstResponder() {
-			super.resignFirstResponder()
-			layer.invalidate()
-		}
-	}
+    override func becomeFirstResponder() {
+      super.becomeFirstResponder()
+      layer.invalidate()
+    }
+
+    override func resignFirstResponder() {
+      super.resignFirstResponder()
+      layer.invalidate()
+    }
+  }
 }
 
 extension EnvironmentValues {
-	public var placeholderColor: Color {
-		get { self[PlaceholderColorEnvironmentKey.self] }
-		set { self[PlaceholderColorEnvironmentKey.self] = newValue }
-	}
+  public var placeholderColor: Color {
+    get { self[PlaceholderColorEnvironmentKey.self] }
+    set { self[PlaceholderColorEnvironmentKey.self] = newValue }
+  }
 }
 
 private struct PlaceholderColorEnvironmentKey: EnvironmentKey {
-	static var defaultValue: Color { .default }
+  static var defaultValue: Color { .default }
 }
